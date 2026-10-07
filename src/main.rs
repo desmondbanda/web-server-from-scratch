@@ -110,13 +110,14 @@ fn route_request(first_line: &str) -> (&'static str, &'static str) {
     }
     // A query such as /about?from=home should still open the about page.
     let path = target.split('?').next().unwrap_or(target);
+    // include_str! embeds a file as text when Rust compiles the program.
+    // Paths here are relative to this Rust file, not the terminal directory.
+    // Re-run cargo run after editing HTML so the embedded pages are rebuilt.
+    // Only these named files are served; URL paths never become disk paths.
     match path {
-        "/" => (
-            "200 OK",
-            "<h1>Hello from Rust!</h1><a href=\"/about\">About</a>",
-        ),
-        "/about" => ("200 OK", "<h1>About</h1><p>A server made with Rust.</p>"),
-        _ => ("404 Not Found", "<h1>Page not found</h1>"), // _ matches any other path.
+        "/" => ("200 OK", include_str!("../pages/index.html")),
+        "/about" => ("200 OK", include_str!("../pages/about.html")),
+        _ => ("404 Not Found", include_str!("../pages/404.html")),
     }
 }
 
