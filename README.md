@@ -20,6 +20,10 @@ If startup fails, another program may already be using port 8080.
 4. Move HTML into separate, readable page files.
 5. Test the behavior and document how to explore the project.
 
-Steps 1–2 are complete. Requests can arrive in several chunks. Header storage is
-limited to 8 KiB, and reads/writes have a five-second timeout per operation.
-Client errors are logged instead of stopping the whole server.
+Steps 1–3 are complete. Visit `/` or `/about`; other paths return 404. Query
+strings do not change the selected page. Unsupported methods return 405 with
+an `Allow: GET` header; malformed request lines return 400.
+
+Requests can arrive in several chunks. Header storage is limited to 8 KiB,
+and reads/writes have a five-second timeout per operation. Client errors are
+logged instead of stopping the server.

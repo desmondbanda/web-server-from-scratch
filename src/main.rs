@@ -68,9 +68,56 @@ fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
             break;
         }
     }
-    let body = "<h1>Hello from Rust!</h1>";
+    // HTTP headers are bytes. Reject invalid UTF-8 rather than guessing text.
+    let request_text = match std::str::from_utf8(&request) {
+        Ok(text) => text,
+        Err(_) => {
+            return send_response(
+                &mut stream,
+                "400 Bad Request",
+                "<h1>Invalid request text</h1>",
+            );
+        }
+    };
+    // The first line looks like: GET /about HTTP/1.1
+    // unwrap_or supplies an empty line if there is no first line.
+    let first_line = request_text.lines().next().unwrap_or("");
+    // A tuple groups the status and page body into one returned value.
+    let (status, body) = route_request(first_line);
+    send_response(&mut stream, status, body)
+}
 
-    send_response(&mut stream, "200 OK", body)
+// This function only chooses a page: it does not need a network connection.
+// 'static means these returned strings are available for the whole program.
+fn route_request(first_line: &str) -> (&'static str, &'static str) {
+    // Collect the words so we can check their count before indexing the list.
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    if parts.len() != 3 {
+        return ("400 Bad Request", "<h1>Expected: GET /path HTTP/1.1</h1>");
+    }
+    let method = parts[0];
+    let target = parts[1];
+    let version = parts[2];
+    if !target.starts_with('/') || (version != "HTTP/1.1" && version != "HTTP/1.0") {
+        return ("400 Bad Request", "<h1>Invalid request line</h1>");
+    }
+    // This learning server implements GET only. We do not read request bodies.
+    if method != "GET" {
+        return (
+            "405 Method Not Allowed",
+            "<h1>Use GET to request a page</h1>",
+        );
+    }
+    // A query such as /about?from=home should still open the about page.
+    let path = target.split('?').next().unwrap_or(target);
+    match path {
+        "/" => (
+            "200 OK",
+            "<h1>Hello from Rust!</h1><a href=\"/about\">About</a>",
+        ),
+        "/about" => ("200 OK", "<h1>About</h1><p>A server made with Rust.</p>"),
+        _ => ("404 Not Found", "<h1>Page not found</h1>"), // _ matches any other path.
+    }
 }
 
 // &str borrows some text instead of taking ownership of a String.
@@ -81,8 +128,14 @@ fn send_response(stream: &mut TcpStream, status: &str, body: &str) -> io::Result
     // \r\n ends an HTTP line. Two in a row separate headers from the body.
     // format! creates a String and inserts values into {} slots.
     // len counts bytes, which is what Content-Length needs.
+    // 405 responses tell clients which method is supported.
+    let allow_header = if status == "405 Method Not Allowed" {
+        "Allow: GET\r\n"
+    } else {
+        ""
+    };
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n{allow_header}\r\n{}",
         body.len(),
         body
     );
