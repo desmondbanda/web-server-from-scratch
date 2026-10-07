@@ -20,5 +20,6 @@ If startup fails, another program may already be using port 8080.
 4. Move HTML into separate, readable page files.
 5. Test the behavior and document how to explore the project.
 
-Step 1 is complete. Every address returns the same greeting. This version reads
-one chunk and stops on read/write errors; step 2 will improve those parts.
+Steps 1–2 are complete. Requests can arrive in several chunks. Header storage is
+limited to 8 KiB, and reads/writes have a five-second timeout per operation.
+Client errors are logged instead of stopping the whole server.
