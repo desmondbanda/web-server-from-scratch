@@ -34,7 +34,7 @@ fn main() {
 
 // Result<()> means success has no extra value (()), or we return an I/O error.
 fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
-    // Some supplies a timeout value. A slow client must not block us forever.
+    // Some supplies a timeout value. An idle read or write gets five seconds.
     // `?` returns early with an error if an operation fails; otherwise we continue.
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -59,6 +59,7 @@ fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
                     &mut stream,
                     "431 Request Header Fields Too Large",
                     "<h1>Request headers are too large</h1>",
+                    false,
                 );
             }
         }
@@ -76,6 +77,7 @@ fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
                 &mut stream,
                 "400 Bad Request",
                 "<h1>Invalid request text</h1>",
+                false,
             );
         }
     };
@@ -84,7 +86,10 @@ fn handle_connection(mut stream: TcpStream) -> io::Result<()> {
     let first_line = request_text.lines().next().unwrap_or("");
     // A tuple groups the status and page body into one returned value.
     let (status, body) = route_request(first_line);
-    send_response(&mut stream, status, body)
+    // Even an error response to HEAD must omit the body. We still return 405
+    // because this small server only supports GET as a successful request.
+    let omit_body = first_line.split_whitespace().next() == Some("HEAD");
+    send_response(&mut stream, status, body, omit_body)
 }
 
 // This function only chooses a page: it does not need a network connection.
@@ -123,7 +128,12 @@ fn route_request(first_line: &str) -> (&'static str, &'static str) {
 
 // &str borrows some text instead of taking ownership of a String.
 // &mut TcpStream lets this helper write to the caller's connection.
-fn send_response(stream: &mut TcpStream, status: &str, body: &str) -> io::Result<()> {
+fn send_response(
+    stream: &mut TcpStream,
+    status: &str,
+    body: &str,
+    omit_body: bool,
+) -> io::Result<()> {
     // HTTP is the message format browsers understand. A response contains a
     // status line (200 means success), headers, a blank line, and the body.
     // \r\n ends an HTTP line. Two in a row separate headers from the body.
@@ -138,7 +148,7 @@ fn send_response(stream: &mut TcpStream, status: &str, body: &str) -> io::Result
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n{allow_header}\r\n{}",
         body.len(),
-        body
+        if omit_body { "" } else { body }
     );
     // write_all sends every byte or reports an error. One write might only
     // send some bytes. as_bytes gives us the bytes that make up the text.
@@ -146,3 +156,8 @@ fn send_response(stream: &mut TcpStream, status: &str, body: &str) -> io::Result
     // This last expression has no semicolon: its Result is the return value.
     // The caller owns stream and closes it when handle_connection finishes.
 }
+
+// Compile this separate test file only when running cargo test.
+// Beginners can read the server above first, then explore the tests.
+#[cfg(test)]
+mod tests;
